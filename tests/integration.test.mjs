@@ -1,0 +1,22 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+const run=process.env.MOCK_INTEGRATION==='1';const base=process.env.TEST_BASE_URL||'http://localhost:3000';
+const headers={'content-type':'application/json',authorization:'Bearer test-user-token'};
+const task=(id)=>({id,title:`stored ${id}`,description:'',duration:30,priority:'Medium',deadline:'',category:'Work',difficulty:'Easy',fixed:false,dependencies:[],completed:false});
+const prefs={start:'09:00',end:'17:00',breakDuration:10,lunchStart:'13:00',lunchDuration:45,workload:7,buffer:10,energy:'Morning',workStyle:'Balanced',commitments:'',mode:'daily'};
+test('mocked Supabase auth, RLS-scoped storage, revision conflicts and Gemini routes', {skip:!run}, async()=>{
+ let r=await fetch(`${base}/api/storage`);assert.equal(r.status,401);
+ r=await fetch(`${base}/api/storage`,{headers});assert.equal(r.status,200);assert.equal(await r.json(),null);
+ const payload={tasks:[task('a'),task('b')],prefs,plans:[],current:null,sound:false};
+ r=await fetch(`${base}/api/storage`,{method:'PUT',headers,body:JSON.stringify({revision:0,payload})});assert.equal(r.status,200);assert.equal((await r.json()).revision,1);
+ r=await fetch(`${base}/api/storage`,{method:'PUT',headers,body:JSON.stringify({revision:0,payload})});assert.equal(r.status,409);
+ r=await fetch(`${base}/api/storage`,{method:'PUT',headers,body:JSON.stringify({revision:1,payload})});assert.equal(r.status,200);assert.equal((await r.json()).revision,2);
+ r=await fetch(`${base}/api/plans/generate`,{method:'POST',headers,body:JSON.stringify({tasks:[task('client-only')],prefs,date:'2026-11-17'})});let result=await r.json();assert.equal(r.status,200);assert.match(result.source,/Gemini/);assert.deepEqual(result.scheduled.map(s=>s.taskId),['b','a']);
+ r=await fetch(`${base}/api/ai/parse-tasks`,{method:'POST',headers,body:JSON.stringify({text:'rough note'})});result=await r.json();assert.equal(result.source,'Gemini (gemini-3.8-flash)');assert.equal(result.tasks[0].title,'Gemini parsed task');
+ r=await fetch(`${base}/api/ai/parse-tasks`,{method:'POST',headers,body:JSON.stringify({text:'__force_404__'})});result=await r.json();assert.equal(result.source,'local parser');assert.match(result.warning,/model.*gemini-3\.8-flash.*unavailable/i);
+ r=await fetch(`${base}/api/ai/parse-tasks`,{method:'POST',headers,body:JSON.stringify({text:'__force_503_primary__'})});result=await r.json();assert.equal(result.source,'Gemini (gemini-3.5-flash-lite)');
+ r=await fetch(`${base}/api/ai/parse-tasks`,{method:'POST',headers,body:JSON.stringify({text:'__force_503_all__'})});result=await r.json();assert.equal(result.source,'local parser');assert.match(result.warning,/temporarily unavailable or overloaded/i);
+ const parse=()=>fetch(`${base}/api/ai/parse-tasks`,{method:'POST',headers,body:JSON.stringify({text:'__count_prompt__'})}).then(r=>r.json());
+ const repeated=await Promise.all(Array.from({length:8},parse));assert.equal(new Set(repeated.map(x=>x.tasks[0].title)).size,1);assert.ok(repeated.some(x=>x.source.includes('cached')));
+ r=await fetch(`${base}/api/ai/assistant`,{method:'POST',headers,body:JSON.stringify({question:'Help me plan'})});result=await r.json();assert.equal(result.suggestReplan,true);
+ r=await fetch(`${base}/api/ai/assistant`,{method:'POST',headers,body:JSON.stringify({question:'__force_503_all__ reorganize'})});result=await r.json();assert.equal(r.status,200);assert.equal(result.source,'local helper');assert.equal(result.suggestReplan,true);assert.match(result.warning,/temporarily unavailable/i);
+});
