@@ -54,6 +54,7 @@ Choose a daily or weekly plan and provide a start and end time, daily work limit
 ### Mix a suggested plan
 
 - Generate a **daily tape** or a seven-day **weekly mix** and review the proposed tracks before applying them.
+- The Input Deck and Daily Tape show your live local time; plans for today start no earlier than the current minute.
 - See scheduled start and end times, task details, priority and duration. Tasks that cannot fit or whose dependencies cannot be satisfied are listed as unscheduled with a reason.
 - Switch the daily tape between timeline and compact list views, track completed tasks, inspect workload and move scheduled tasks one day forward.
 - Use **Rewind & Replan** to propose a fresh arrangement of unfinished tasks while retaining completed tracks. Replans also require approval.
